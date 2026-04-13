@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Qwen
+.qwen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive data
+data/*
+!data/.env.example
+auth_token.txt
+*kimi_cookies.json
+*zai_cookies.json
+last_login.txt
+x_signature.txt
+
+# Project files (do not push to GitHub)
+abrir_proyecto.bat
+analysis_results.md
+chatglm.py
+glm curl response.txt
+implementation_plan.md
