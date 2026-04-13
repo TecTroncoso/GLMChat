@@ -187,18 +187,59 @@ class AuthExtractor:
             self.config.print_status("Waiting for redirect to Z.ai...", "cyan")
             await page.sleep(5)
 
-            # Switch back to main tab
+            # Find the tab with chat.z.ai (could be any tab)
+            self.config.print_status("Looking for Z.ai tab...", "cyan")
             tabs = browser.tabs
-            page = tabs[0]
-            await page.sleep(3)
+            self.config.print_status(f"Found {len(tabs)} tab(s)", "dim")
 
-            # Extract cookies
+            # Look for the tab with Z.ai URL
+            page = None
+            for tab in tabs:
+                try:
+                    url = tab.url
+                    self.config.print_status(f"  Tab URL: {url[:60]}...", "dim")
+                    if "chat.z.ai" in str(url):
+                        page = tab
+                        self.config.print_status("  -> Using Z.ai tab", "green")
+                        break
+                except Exception:
+                    continue
+
+            # Fallback to first tab if Z.ai not found
+            if page is None:
+                self.config.print_status(
+                    "Z.ai tab not found, using first tab", "yellow"
+                )
+                page = tabs[0]
+
+            # Wait for page to fully load
+            self.config.print_status("Waiting for page to load...", "cyan")
+            await page.sleep(5)
+
+            # Debug: show current URL
+            try:
+                current_url = page.url
+                self.config.print_status(f"Current URL: {current_url[:80]}", "dim")
+            except Exception:
+                self.config.print_status("Could not get current URL", "yellow")
+
+            # Extract cookies via JS (CDP cookie methods hang in Brave)
             self.config.print_status("Grabbing cookies...", "cyan")
-            cookies_raw = await page.send(uc.cdp.network.get_cookies())
+            try:
+                cookies_js = await page.evaluate("document.cookie")
+                self.config.print_status(
+                    f"Got cookies ({len(cookies_js)} chars)", "green"
+                )
 
-            cookie_dict = {}
-            for cookie in cookies_raw:
-                cookie_dict[cookie.name] = cookie.value
+                cookie_dict = {}
+                for part in cookies_js.split("; "):
+                    if "=" in part:
+                        name, value = part.split("=", 1)
+                        cookie_dict[name] = value
+
+            except Exception as e:
+                self.config.print_status(f"Cookie extraction failed: {e}", "red")
+                cookie_dict = {}
 
             # Extract JWT token
             self.config.print_status("Getting auth token...", "cyan")
@@ -232,6 +273,8 @@ class AuthExtractor:
                 self.config.print_status(f"Got token: {token[:30]}...", "green")
                 with open(self.config.TOKEN_FILE, "w") as f:
                     f.write(token)
+                # Also add token to cookies (document.cookie can't see HttpOnly cookies)
+                cookie_dict["token"] = token
             else:
                 self.config.print_status(
                     "Couldn't find token in localStorage", "yellow"
