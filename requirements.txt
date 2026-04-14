@@ -1,4 +1,4 @@
 rich
 nodriver
 python-dotenv
-httpx
+httpx[http2]

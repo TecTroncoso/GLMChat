@@ -60,7 +60,17 @@ class GLMClient:
         self.token = self._load_token()
         self.user_id = self._extract_user_id()
         self.chat_id = None
-        self.client = httpx.Client(timeout=120.0)
+        self.client = httpx.Client(http2=True, timeout=120.0)
+        self.cached_headers = None
+        
+    def close(self):
+        self.client.close()
+        
+    def __del__(self):
+        try:
+            self.close()
+        except:
+            pass
 
     def _load_cookies(self):
         try:
@@ -110,6 +120,9 @@ class GLMClient:
 
     def _build_headers(self, prompt=None):
         """Build request headers for API calls, including X-Signature."""
+        if self.cached_headers:
+            return self.cached_headers.copy()
+            
         headers = self.config.BASE_HEADERS.copy()
 
         if self.token:
@@ -122,7 +135,8 @@ class GLMClient:
         # Add X-FE-Version
         headers["X-FE-Version"] = self.config.FE_VERSION
 
-        return headers
+        self.cached_headers = headers
+        return headers.copy()
 
     def _build_headers_for_completion(self, prompt, request_id, timestamp):
         """Build headers with X-Signature for completion requests."""
@@ -136,52 +150,58 @@ class GLMClient:
 
         return headers
 
+    def _get_base_completion_params(self):
+        if not hasattr(self, '_cached_base_params'):
+            self._cached_base_params = {
+                "user_id": self.user_id,
+                "version": "0.0.1",
+                "platform": "web",
+                "token": self.token if self.token else "",
+                "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+                "language": "en-US",
+                "languages": "en-US",
+                "timezone": "Europe/Madrid",
+                "cookie_enabled": "true",
+                "screen_width": "1280",
+                "screen_height": "800",
+                "screen_resolution": "1280x800",
+                "viewport_height": "444",
+                "viewport_width": "1191",
+                "viewport_size": "1191x444",
+                "color_depth": "32",
+                "pixel_ratio": "2",
+                "search": "",
+                "hash": "",
+                "host": "chat.z.ai",
+                "hostname": "chat.z.ai",
+                "protocol": "https:",
+                "referrer": f"{self.config.BASE_URL}/",
+                "title": f"Z.ai - Free AI Chatbot & Agent powered by {self.config.MODEL}",
+                "timezone_offset": "-120",
+                "is_mobile": "false",
+                "is_touch": "false",
+                "max_touch_points": "1",
+                "browser_name": "Chrome",
+                "os_name": "Windows",
+            }
+        return self._cached_base_params.copy()
+
     def _build_completion_params(self, chat_id, request_id, timestamp):
         """
         Build the ~37 query params required by /api/v2/chat/completions.
         """
         now = datetime.now(timezone.utc)
-
-        params = {
+        params = self._get_base_completion_params()
+        
+        params.update({
             "timestamp": timestamp,
             "requestId": request_id,
-            "user_id": self.user_id,
-            "version": "0.0.1",
-            "platform": "web",
-            "token": self.token if self.token else "",
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
-            "language": "en-US",
-            "languages": "en-US",
-            "timezone": "Europe/Madrid",
-            "cookie_enabled": "true",
-            "screen_width": "1280",
-            "screen_height": "800",
-            "screen_resolution": "1280x800",
-            "viewport_height": "444",
-            "viewport_width": "1191",
-            "viewport_size": "1191x444",
-            "color_depth": "32",
-            "pixel_ratio": "2",
             "current_url": f"{self.config.BASE_URL}/c/{chat_id}",
             "pathname": f"/c/{chat_id}",
-            "search": "",
-            "hash": "",
-            "host": "chat.z.ai",
-            "hostname": "chat.z.ai",
-            "protocol": "https:",
-            "referrer": f"{self.config.BASE_URL}/",
-            "title": f"Z.ai - Free AI Chatbot & Agent powered by {self.config.MODEL}",
-            "timezone_offset": "-120",
-            "local_time": now.strftime("%Y-%m-%dT%H:%M:%S.")
-            + f"{now.microsecond // 1000:03d}Z",
+            "local_time": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
             "utc_time": now.strftime("%a, %d %b %Y %H:%M:%S GMT"),
-            "is_mobile": "false",
-            "is_touch": "false",
-            "max_touch_points": "1",
-            "browser_name": "Chrome",
-            "os_name": "Windows",
             "signature_timestamp": timestamp,
-        }
+        })
         return params
 
     def _create_chat(self, prompt):
@@ -256,17 +276,13 @@ class GLMClient:
             self.config.print_status(f"Create chat error: {e}", "red")
             return None
 
-    def _build_completion_payload(self, prompt, chat_id, request_id):
-        """Build the JSON payload for chat completions."""
-        current_time = datetime.now(timezone.utc)
-
-        payload = {
+    def _get_base_completion_payload(self):
+        if hasattr(self, '_cached_base_payload'):
+            return self._cached_base_payload.copy()
+            
+        self._cached_base_payload = {
             "stream": True,
             "model": self.config.MODEL,
-            "chat_id": chat_id,
-            "messages": [{"role": "user", "content": prompt}],
-            "signature_prompt": prompt,
-            "id": request_id,
             "params": {},
             "extra": {},
             "mcp_servers": ["advanced-search"],
@@ -281,6 +297,24 @@ class GLMClient:
                 "vlm_website_mode": False,
                 "enable_thinking": True,
             },
+            "background_tasks": {
+                "title_generation": True,
+                "tags_generation": True,
+            },
+        }
+        return self._cached_base_payload.copy()
+
+    def _build_completion_payload(self, prompt, chat_id, request_id):
+        """Build the JSON payload for chat completions."""
+        current_time = datetime.now(timezone.utc)
+
+        payload = self._get_base_completion_payload()
+        
+        payload.update({
+            "chat_id": chat_id,
+            "messages": [{"role": "user", "content": prompt}],
+            "signature_prompt": prompt,
+            "id": request_id,
             "variables": {
                 "{{USER_NAME}}": "User",
                 "{{USER_LOCATION}}": "Unknown",
@@ -290,12 +324,9 @@ class GLMClient:
                 "{{CURRENT_WEEKDAY}}": current_time.strftime("%A"),
                 "{{CURRENT_TIMEZONE}}": "Europe/Madrid",
                 "{{USER_LANGUAGE}}": "en-US",
-            },
-            "background_tasks": {
-                "title_generation": True,
-                "tags_generation": True,
-            },
-        }
+            }
+        })
+        
         return payload
 
     def chat(self, prompt):
@@ -368,32 +399,37 @@ class GLMClient:
                                     inner_data = data.get("data", {})
                                     phase = inner_data.get("phase", "")
 
-                                    # Handle usage info
-                                    if phase == "other":
-                                        usage = inner_data.get("usage", {})
-                                        if usage:
-                                            total_tokens = usage.get(
-                                                "total_tokens", "?"
-                                            )
-                                            print_status(
-                                                f"Tokens used: {total_tokens}", "dim"
-                                            )
-                                        continue
-
                                     # Handle done
                                     if phase == "done" or inner_data.get("done"):
                                         break
 
-                                    # Extract content
                                     delta = inner_data.get("delta_content", "")
                                     if delta:
-                                        yield delta
+                                        # Yield dictionary with phase instead of just string
+                                        yield {"phase": phase, "content": delta}
+                                        
+                                    # Z.ai sometimes sends the start of the answer inside an 'edit_content' block
+                                    # that is meant to close the reasoning <details> tag. We must not miss it!
+                                    if "edit_content" in inner_data:
+                                        edit_str = inner_data.get("edit_content", "")
+                                        if "</details>" in edit_str:
+                                            after_details = edit_str.split("</details>")[-1]
+                                            if after_details:
+                                                yield {"phase": phase if phase else "answer", "content": after_details}
+
+                                    # Handle usage info safely by yielding it
+                                    if phase == "other":
+                                        usage = inner_data.get("usage", {})
+                                        if usage:
+                                            total_tokens = usage.get("total_tokens", "?")
+                                            yield {"phase": "usage", "content": str(total_tokens)}
+                                        continue
 
                             except json.JSONDecodeError:
                                 pass
 
-                full_content = stream_live(content_generator())
-                return full_content
+                final_content = stream_live(content_generator())
+                return final_content
 
         except httpx.ConnectError as e:
             print_status(f"Connection error: {e}", "red")
