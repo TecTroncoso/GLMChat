@@ -56,7 +56,19 @@ def stream_live(content_generator):
                 phase = chunk.get("phase")
                 content = chunk.get("content", "")
                 
-                if phase == "thinking":
+                if phase == "replace_buffer":
+                    if "<details" in content:
+                        if "</details>" in content:
+                            parts = content.split("</details>", 1)
+                            full_thinking = parts[0] + "</details>"
+                            full_answer = parts[1]
+                        else:
+                            full_thinking = content
+                            full_answer = ""
+                    else:
+                        full_answer = content
+                        full_thinking = ""
+                elif phase == "thinking":
                     full_thinking += content
                 elif phase == "usage":
                     tokens_used = content

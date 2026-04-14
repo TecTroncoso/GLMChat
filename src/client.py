@@ -387,6 +387,7 @@ class GLMClient:
                 print_response_start()
 
                 def content_generator():
+                    raw_buffer = ""
                     for line in resp.iter_lines():
                         if line.startswith("data:"):
                             json_str = line[5:].strip()
@@ -399,23 +400,16 @@ class GLMClient:
                                     inner_data = data.get("data", {})
                                     phase = inner_data.get("phase", "")
 
-                                    # Handle done
-                                    if phase == "done" or inner_data.get("done"):
-                                        break
-
                                     delta = inner_data.get("delta_content", "")
-                                    if delta:
-                                        # Yield dictionary with phase instead of just string
-                                        yield {"phase": phase, "content": delta}
-                                        
-                                    # Z.ai sometimes sends the start of the answer inside an 'edit_content' block
-                                    # that is meant to close the reasoning <details> tag. We must not miss it!
-                                    if "edit_content" in inner_data:
-                                        edit_str = inner_data.get("edit_content", "")
-                                        if "</details>" in edit_str:
-                                            after_details = edit_str.split("</details>")[-1]
-                                            if after_details:
-                                                yield {"phase": phase if phase else "answer", "content": after_details}
+                                    edit_content = inner_data.get("edit_content", "")
+                                    edit_index = inner_data.get("edit_index", -1)
+
+                                    if edit_content and edit_index >= 0:
+                                        raw_buffer = raw_buffer[:edit_index] + edit_content
+                                        yield {"phase": "replace_buffer", "content": raw_buffer}
+                                    elif delta:
+                                        raw_buffer += delta
+                                        yield {"phase": phase if phase and phase != "done" else "answer", "content": delta}
 
                                     # Handle usage info safely by yielding it
                                     if phase == "other":
@@ -424,6 +418,10 @@ class GLMClient:
                                             total_tokens = usage.get("total_tokens", "?")
                                             yield {"phase": "usage", "content": str(total_tokens)}
                                         continue
+                                        
+                                    # Handle done: evaluate break AFTER yielding content 
+                                    if phase == "done" or inner_data.get("done"):
+                                        break
 
                             except json.JSONDecodeError:
                                 pass
