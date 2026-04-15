@@ -60,6 +60,8 @@ class GLMClient:
         self.token = self._load_token()
         self.user_id = self._extract_user_id()
         self.chat_id = None
+        self.last_assistant_message_id = None
+        self.first_user_message_id = None
         self.client = httpx.Client(http2=True, timeout=120.0)
         self.cached_headers = None
         
@@ -211,7 +213,8 @@ class GLMClient:
 
         self.config.print_status("Creating new chat...", "cyan")
 
-        message_id = str(uuid.uuid4())
+        self.first_user_message_id = str(uuid.uuid4())
+        message_id = self.first_user_message_id
         payload = {
             "chat": {
                 "id": "",
@@ -304,7 +307,7 @@ class GLMClient:
         }
         return self._cached_base_payload.copy()
 
-    def _build_completion_payload(self, prompt, chat_id, request_id):
+    def _build_completion_payload(self, prompt, chat_id, assistant_message_id, user_message_id, parent_id):
         """Build the JSON payload for chat completions."""
         current_time = datetime.now(timezone.utc)
 
@@ -314,7 +317,9 @@ class GLMClient:
             "chat_id": chat_id,
             "messages": [{"role": "user", "content": prompt}],
             "signature_prompt": prompt,
-            "id": request_id,
+            "id": assistant_message_id,
+            "current_user_message_id": user_message_id,
+            "current_user_message_parent_id": parent_id,
             "variables": {
                 "{{USER_NAME}}": "User",
                 "{{USER_LOCATION}}": "Unknown",
@@ -336,15 +341,27 @@ class GLMClient:
             return
 
         # Create chat if needed
+        is_new_chat = False
         if not self.chat_id:
             chat_id = self._create_chat(prompt)
             if not chat_id:
                 print_status("Failed to create chat session", "red")
                 return
+            is_new_chat = True
         else:
             chat_id = self.chat_id
 
         print_status("Sending message to GLM...", "cyan")
+
+        # Context tracking IDs
+        if is_new_chat:
+            user_message_id = self.first_user_message_id
+            parent_id = None
+        else:
+            user_message_id = str(uuid.uuid4())
+            parent_id = self.last_assistant_message_id
+            
+        assistant_message_id = str(uuid.uuid4())
 
         # Generate request IDs and timestamp
         request_id = self.config.generate_request_id()
@@ -365,7 +382,7 @@ class GLMClient:
         params = self._build_completion_params(chat_id, request_id, timestamp)
 
         # Build payload
-        payload = self._build_completion_payload(prompt, chat_id, request_id)
+        payload = self._build_completion_payload(prompt, chat_id, assistant_message_id, user_message_id, parent_id)
 
         try:
             with self.client.stream(
@@ -427,6 +444,7 @@ class GLMClient:
                                 pass
 
                 final_content = stream_live(content_generator())
+                self.last_assistant_message_id = assistant_message_id
                 return final_content
 
         except httpx.ConnectError as e:
@@ -437,3 +455,5 @@ class GLMClient:
     def reset_chat(self):
         """Reset the current chat session."""
         self.chat_id = None
+        self.last_assistant_message_id = None
+        self.first_user_message_id = None
