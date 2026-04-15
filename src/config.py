@@ -71,7 +71,7 @@ class Config:
 
     @staticmethod
     def generate_request_id():
-        return str(uuid.uuid4())
+        return uuid.uuid4().hex
 
     @staticmethod
     def needs_reauth():

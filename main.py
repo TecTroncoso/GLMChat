@@ -37,34 +37,33 @@ def interactive_mode():
     if not asyncio.run(ensure_auth()):
         sys.exit(1)
 
-    client = GLMClient()
+    with GLMClient() as client:
+        console.print("\n[bold cyan]GLM Interactive Chat Mode[/bold cyan]")
+        console.print("[dim]Type /exit to quit, /reset to start new chat[/dim]\n")
 
-    console.print("\n[bold cyan]GLM Interactive Chat Mode[/bold cyan]")
-    console.print("[dim]Type /exit to quit, /reset to start new chat[/dim]\n")
+        while True:
+            try:
+                prompt = get_user_input()
 
-    while True:
-        try:
-            prompt = get_user_input()
+                if not prompt:
+                    continue
 
-            if not prompt:
-                continue
+                if prompt.strip().lower() in ["/exit", "/quit", "/q"]:
+                    print_goodbye()
+                    break
 
-            if prompt.strip().lower() in ["/exit", "/quit", "/q"]:
+                if prompt.strip().lower() == "/reset":
+                    client.reset_chat()
+                    Config.print_status("Chat session reset", "cyan")
+                    continue
+
+                client.chat(prompt)
+
+            except KeyboardInterrupt:
                 print_goodbye()
                 break
-
-            if prompt.strip().lower() == "/reset":
-                client.reset_chat()
-                Config.print_status("Chat session reset", "cyan")
-                continue
-
-            client.chat(prompt)
-
-        except KeyboardInterrupt:
-            print_goodbye()
-            break
-        except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
+            except Exception as e:
+                console.print(f"[red]Error: {e}[/red]")
 
 
 def single_prompt_mode(prompt):
@@ -72,8 +71,8 @@ def single_prompt_mode(prompt):
     if not asyncio.run(ensure_auth()):
         sys.exit(1)
 
-    client = GLMClient()
-    client.chat(prompt)
+    with GLMClient() as client:
+        client.chat(prompt)
 
 
 def main():

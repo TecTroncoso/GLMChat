@@ -34,9 +34,7 @@ class AuthExtractor:
 
         try:
             page = await browser.get(f"{self.config.BASE_URL}/")
-
-            self.config.print_status("Waiting for page to load...", "cyan")
-            await page.sleep(5)
+            self.config.print_status("Page loaded, searching elements...", "cyan")
 
             # Click login button using XPath
             self.config.print_status("Looking for login button...", "cyan")
@@ -47,23 +45,23 @@ class AuthExtractor:
                 )
                 if login_btn:
                     await login_btn[0].click()
-                    await page.sleep(2)
+                    await page.sleep(0.5)
                 else:
                     self.config.print_status(
                         "Login button not found, trying chat input...", "yellow"
                     )
                     try:
-                        chat_input = await page.find(".chat-input textarea", timeout=5)
+                        chat_input = await page.find(".chat-input textarea", timeout=3)
                         await chat_input.click()
-                        await page.sleep(2)
+                        await page.sleep(0.5)
                     except Exception:
                         pass
             except Exception as e:
                 self.config.print_status(f"Login button click failed: {e}", "yellow")
                 try:
-                    chat_input = await page.find(".chat-input textarea", timeout=5)
+                    chat_input = await page.find(".chat-input textarea", timeout=3)
                     await chat_input.click()
-                    await page.sleep(2)
+                    await page.sleep(0.5)
                 except Exception:
                     pass
 
@@ -76,7 +74,7 @@ class AuthExtractor:
                 )
                 if google_btn:
                     await google_btn[0].click()
-                    await page.sleep(3)
+                    await page.sleep(1)
                 else:
                     self.config.print_status(
                         "Google button not found, trying fallback selectors...",
@@ -96,17 +94,18 @@ class AuthExtractor:
             except Exception as e:
                 self.config.print_status(f"Google button click failed: {e}", "yellow")
                 self.config.print_status("Please click Google login manually", "yellow")
-                await page.sleep(10)
+                await page.sleep(3)
 
             # Wait for Google OAuth popup
             self.config.print_status("Waiting for Google OAuth...", "cyan")
-            await page.sleep(3)
+            for _ in range(20):
+                if len(browser.tabs) > 1:
+                    break
+                await asyncio.sleep(0.5)
 
-            # Check for new tabs (Google OAuth popup)
             tabs = browser.tabs
             if len(tabs) > 1:
                 page = tabs[-1]
-                await page.sleep(2)
 
             # Enter email
             self.config.print_status("Entering email...", "cyan")
@@ -140,7 +139,6 @@ class AuthExtractor:
                         code="Enter",
                     )
                 )
-                await page.sleep(4)
 
                 # Enter password
                 self.config.print_status("Entering password...", "cyan")
@@ -185,7 +183,13 @@ class AuthExtractor:
 
             # Wait for redirect back to Z.ai
             self.config.print_status("Waiting for redirect to Z.ai...", "cyan")
-            await page.sleep(5)
+            
+            # Dynamic wait loop
+            for _ in range(20):
+                tabs = browser.tabs
+                if any("chat.z.ai" in str(t.url) for t in tabs):
+                    break
+                await asyncio.sleep(0.5)
 
             # Find the tab with chat.z.ai (could be any tab)
             self.config.print_status("Looking for Z.ai tab...", "cyan")
@@ -212,9 +216,16 @@ class AuthExtractor:
                 )
                 page = tabs[0]
 
-            # Wait for page to fully load
-            self.config.print_status("Waiting for page to load...", "cyan")
-            await page.sleep(5)
+            # Wait for page to fully load dynamically based on local storage
+            self.config.print_status("Waiting for tokens to appear...", "cyan")
+            for _ in range(15):
+                try:
+                    t = await page.evaluate('localStorage.getItem("token")')
+                    if t:
+                        break
+                except Exception:
+                    pass
+                await asyncio.sleep(0.5)
 
             # Debug: show current URL
             try:
