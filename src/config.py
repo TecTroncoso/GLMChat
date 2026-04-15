@@ -16,7 +16,6 @@ console = Console()
 
 # Z.ai X-Signature constants
 ZAI_SALT_KEY = "key-@@@@)))()((9))-xxxx&&&%%%%%"
-ZAI_BUCKET_WINDOW = 300000  # 5 minutes in ms
 
 # Browser paths (search order)
 BROWSER_PATHS = [
@@ -29,8 +28,6 @@ BROWSER_PATHS = [
 
 def find_browser():
     """Find a valid browser executable (Brave first, then Chrome)."""
-    import os
-
     for path in BROWSER_PATHS:
         expanded = os.path.expandvars(path)
         if os.path.isfile(expanded):

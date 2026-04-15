@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 from .config import Config, ZAI_SALT_KEY
 from .display import print_status, print_response_start, stream_live
 
+# Pre-encode the salt key once at import time instead of every signature call
+_SALT_KEY_BYTES = ZAI_SALT_KEY.encode()
+
 
 def generate_x_signature(prompt, token, user_id, timestamp, request_id):
     """
@@ -27,7 +30,7 @@ def generate_x_signature(prompt, token, user_id, timestamp, request_id):
 
     # Generate w_key
     w_key = hmac.new(
-        ZAI_SALT_KEY.encode(), str(bucket).encode(), hashlib.sha256
+        _SALT_KEY_BYTES, str(bucket).encode(), hashlib.sha256
     ).hexdigest()
 
     # Sort params and build payload
@@ -158,6 +161,20 @@ class GLMClient:
 
         return headers
 
+    def _get_static_completion_headers(self):
+        """Return cached static headers used for every completion request."""
+        if not hasattr(self, '_static_completion_headers'):
+            self._static_completion_headers = {
+                "Accept": "*/*",
+                "Accept-Language": "en-US",
+                "Sec-Fetch-Dest": "empty",
+                "Sec-Fetch-Mode": "cors",
+                "Sec-Fetch-Site": "same-origin",
+                "Sec-GPC": "1",
+                "DNT": "1",
+            }
+        return self._static_completion_headers
+
     def _get_base_completion_params(self):
         if not hasattr(self, '_cached_base_params'):
             self._cached_base_params = {
@@ -219,7 +236,7 @@ class GLMClient:
 
         self.config.print_status("Creating new chat...", "cyan")
 
-        self.first_user_message_id = str(uuid.uuid4())
+        self.first_user_message_id = uuid.uuid4().hex
         message_id = self.first_user_message_id
         payload = {
             "chat": {
@@ -364,24 +381,18 @@ class GLMClient:
             user_message_id = self.first_user_message_id
             parent_id = None
         else:
-            user_message_id = str(uuid.uuid4())
+            user_message_id = uuid.uuid4().hex
             parent_id = self.last_assistant_message_id
             
-        assistant_message_id = str(uuid.uuid4())
+        assistant_message_id = uuid.uuid4().hex
 
         # Generate request IDs and timestamp
         request_id = self.config.generate_request_id()
         timestamp = str(int(time.time() * 1000))
 
-        # Build headers with X-Signature
+        # Build headers with X-Signature (static Sec-* headers cached below)
         headers = self._build_headers_for_completion(prompt, request_id, timestamp)
-        headers["Accept"] = "*/*"
-        headers["Accept-Language"] = "en-US"
-        headers["Sec-Fetch-Dest"] = "empty"
-        headers["Sec-Fetch-Mode"] = "cors"
-        headers["Sec-Fetch-Site"] = "same-origin"
-        headers["Sec-GPC"] = "1"
-        headers["DNT"] = "1"
+        headers.update(self._get_static_completion_headers())
         headers["Referer"] = f"{self.config.BASE_URL}/c/{chat_id}"
 
         # Build query params
