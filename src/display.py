@@ -51,7 +51,7 @@ def stream_live(content_generator):
             
         return Group(*elements)
 
-    with Live(console=console, refresh_per_second=10) as live:
+    with Live(console=console, auto_refresh=False) as live:
         has_changed = False
         for chunk in content_generator:
             if isinstance(chunk, dict):
@@ -86,9 +86,8 @@ def stream_live(content_generator):
                     has_changed = True
                 full_answer += chunk
                 
-            # Throttle markdown parsing and UI updating to ~10 FPS (every 0.1s)
-            current_time = time.time()
-            if current_time - last_update >= 0.1 and has_changed:
+            # Allow rich to handle rendering throttling natively
+            if has_changed:
                 renderable = build_render_group()
                 title = f"[bold white]GLM[/bold white]"
                 if tokens_used:
@@ -101,8 +100,7 @@ def stream_live(content_generator):
                     title=title,
                     title_align="left",
                 )
-                live.update(panel)
-                last_update = current_time
+                live.update(panel, refresh=True)
                 has_changed = False
                     
         # Ensure the final output is drawn
@@ -119,7 +117,7 @@ def stream_live(content_generator):
                 title=title,
                 title_align="left",
             )
-            live.update(panel)
+            live.update(panel, refresh=True)
 
     return full_answer
 

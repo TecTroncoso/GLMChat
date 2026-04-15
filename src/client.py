@@ -62,7 +62,7 @@ class GLMClient:
         self.chat_id = None
         self.last_assistant_message_id = None
         self.first_user_message_id = None
-        self.client = httpx.Client(http2=True, timeout=120.0)
+        self.client = httpx.Client(timeout=120.0)
         self.cached_headers = None
         
     def close(self):
