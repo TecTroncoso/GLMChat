@@ -1,4 +1,5 @@
 import os
+import logging
 import time
 import uuid
 import warnings
@@ -7,14 +8,19 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 warnings.filterwarnings("ignore")
+logger = logging.getLogger(__name__)
 
 # Get the project root directory (parent of src/)
 PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(PROJECT_ROOT / "data" / ".env")
+_ENV_PATH = PROJECT_ROOT / "data" / ".env"
+load_dotenv(_ENV_PATH)
 
 console = Console()
 
 # Z.ai X-Signature constants
+# NOTE: This is a PUBLIC constant embedded in Z.ai's frontend JavaScript bundle.
+# It is NOT a secret — it is required by all clients to compute X-Signature headers.
+# Extracted via reverse-engineering of the Z.ai web app.
 ZAI_SALT_KEY = "key-@@@@)))()((9))-xxxx&&&%%%%%"
 
 # Browser paths (search order)
@@ -36,8 +42,13 @@ def find_browser():
 
 
 class Config:
-    ZAI_EMAIL = os.getenv("ZAI_EMAIL")
-    ZAI_PASSWORD = os.getenv("ZAI_PASSWORD")
+    # Credentials loaded securely: keyring first, .env fallback
+    from .secrets import get_credentials as _get_creds, migrate_from_env as _migrate
+    _migrate(str(_ENV_PATH))  # One-time migration: .env → OS keyring
+    _email, _password = _get_creds()
+    ZAI_EMAIL = _email
+    ZAI_PASSWORD = _password
+    del _get_creds, _migrate, _email, _password  # cleanup namespace
 
     HEADLESS = False
     AUTH_WAIT_TIME = 10
@@ -59,7 +70,7 @@ class Config:
         "Origin": BASE_URL,
     }
 
-    MODEL = "glm-4.7"
+    MODEL = "GLM-5.1"
     FE_VERSION = "prod-fe-1.1.7"
 
     @staticmethod

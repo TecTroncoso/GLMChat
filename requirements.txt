@@ -2,3 +2,4 @@ rich
 nodriver
 python-dotenv
 httpx[http2]
+keyring

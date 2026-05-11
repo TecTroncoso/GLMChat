@@ -28,19 +28,14 @@ def generate_x_signature(prompt, token, user_id, timestamp, request_id):
     # Calculate bucket (5-minute window)
     bucket = int(int(timestamp) / 300000)
 
-    # Generate w_key
+    # Generate w_key — Z.ai uses the hex-encoded HMAC as the signing key
+    # (hexdigest string re-encoded to bytes is intentional, matches JS implementation)
     w_key = hmac.new(
         _SALT_KEY_BYTES, str(bucket).encode(), hashlib.sha256
     ).hexdigest()
 
-    # Sort params and build payload
-    payload_dict = {
-        "timestamp": timestamp,
-        "requestId": request_id,
-        "user_id": user_id,
-    }
-    sorted_items = sorted(payload_dict.items(), key=lambda x: x[0])
-    sorted_payload = ",".join([f"{k},{v}" for k, v in sorted_items])
+    # Payload keys always sort to: requestId → timestamp → user_id (alphabetical)
+    sorted_payload = f"requestId,{request_id},timestamp,{timestamp},user_id,{user_id}"
 
     # Base64 encode prompt
     prompt_b64 = base64.b64encode(prompt.strip().encode()).decode()
@@ -65,7 +60,7 @@ class GLMClient:
         self.chat_id = None
         self.last_assistant_message_id = None
         self.first_user_message_id = None
-        self.client = httpx.Client(timeout=120.0)
+        self.client = httpx.Client(timeout=120.0, http2=True)
         self.cached_headers = None
         
     def close(self):
@@ -91,6 +86,12 @@ class GLMClient:
             return {}
 
     def _load_token(self):
+        # Secure source first: OS keyring
+        from .secrets import get_token
+        token = get_token()
+        if token:
+            return token
+        # Fallback: plaintext file (legacy installs)
         try:
             with open(self.config.TOKEN_FILE, "r") as f:
                 return f.read().strip()

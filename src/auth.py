@@ -1,7 +1,10 @@
 import asyncio
+import logging
 import nodriver as uc
 import json
 from .config import Config, find_browser
+
+logger = logging.getLogger(__name__)
 
 
 class AuthExtractor:
@@ -54,16 +57,16 @@ class AuthExtractor:
                         chat_input = await page.find(".chat-input textarea", timeout=3)
                         await chat_input.click()
                         await page.sleep(0.5)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug("Chat input fallback failed: %s", e)
             except Exception as e:
                 self.config.print_status(f"Login button click failed: {e}", "yellow")
                 try:
                     chat_input = await page.find(".chat-input textarea", timeout=3)
                     await chat_input.click()
                     await page.sleep(0.5)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Chat input fallback after login click fail: %s", e)
 
             # Click Google login button using XPath
             self.config.print_status("Clicking Google login button...", "cyan")
@@ -275,15 +278,18 @@ class AuthExtractor:
                                 )
                                 if token:
                                     break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.debug("Token key '%s' lookup failed: %s", key, e)
             except Exception as e:
                 self.config.print_status(f"Token extraction failed: {e}", "red")
 
             if token:
                 self.config.print_status(f"Got token: {token[:30]}...", "green")
-                with open(self.config.TOKEN_FILE, "w") as f:
-                    f.write(token)
+                # Store token securely: keyring first, file fallback
+                from .secrets import store_token
+                if not store_token(token):
+                    with open(self.config.TOKEN_FILE, "w") as f:
+                        f.write(token)
                 # Also add token to cookies (document.cookie can't see HttpOnly cookies)
                 cookie_dict["token"] = token
             else:
