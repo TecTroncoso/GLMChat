@@ -29,10 +29,10 @@ No API keys needed. No monthly fees. Just authenticate once and start chatting.
 |---------|-------------|
 | 🔥 **Real-time Streaming** | Token-by-token response rendering with event-driven UI |
 | 💭 **Thinking Visualization** | Watch the model reason step-by-step in a dedicated panel |
+| 🔐 **Enterprise Security** | OS-level credential storage via **Windows Credential Manager / Keyring** |
+| ⚡ **HTTP/2 Multiplexing** | High-performance network layer with header compression and multiplexing |
+| 🛡️ **Optimized HMAC** | Re-engineered signature generation with pre-sorted keys & pre-encoding |
 | 🧵 **Conversation Memory** | Multi-turn context tracking — the AI remembers your chat |
-| 🔐 **Auto Authentication** | Automated Google OAuth login via headless browser |
-| 🛡️ **X-Signature HMAC** | Fully reverse-engineered API signature generation |
-| ⚡ **Optimized Performance** | Smart render throttling, cached headers, pre-encoded keys |
 | 🎨 **Beautiful Terminal UI** | Rich-powered panels, markdown rendering & syntax highlighting |
 
 ---
@@ -57,29 +57,33 @@ python -m venv venv
 # Activate (Windows)
 venv\Scripts\activate
 
-# Activate (Linux/macOS)
-source venv/bin/activate
-
 # Install dependencies
 pip install -r requirements.txt
 ```
 
-### Configuration
+### Configuration & Security
 
-Create a `.env` file inside the `data/` directory:
+GLMChat uses an **Extreme Security** approach. You only need to provide your credentials once; the system will migrate them to your OS-level secure storage (Keyring) and remove them from disk.
 
+1. Create a `data/.env` file:
 ```bash
 mkdir data
 ```
 
+2. Add your credentials:
 ```env
 # data/.env
 ZAI_EMAIL=your_google_email@gmail.com
 ZAI_PASSWORD=your_password
 ```
 
-> [!NOTE]
-> Your credentials are only used locally for automated browser login. They are never sent anywhere except Google's OAuth page.
+3. **Run the app**. GLMChat will automatically:
+   - Detect the credentials in `.env`.
+   - Move them to the **Windows Credential Manager**.
+   - Clean the `.env` file to ensure no secrets are stored in plaintext.
+
+> [!IMPORTANT]
+> After the first run, you can safely delete the email/password lines from `.env`. Your secrets are now encrypted by your Operating System.
 
 ---
 
@@ -91,42 +95,11 @@ ZAI_PASSWORD=your_password
 python main.py
 ```
 
-This opens a persistent chat session where you can have multi-turn conversations:
-
-```
-GLM Interactive Chat Mode
-Type /exit to quit, /reset to start new chat
-
-You: What is quantum computing?
-
-╭─ GLM (Tokens: 342) ──────────────────────────────╮
-│                                                    │
-│  ╭── Thinking... ──────────────────────────────╮   │
-│  │ The user is asking about quantum computing. │   │
-│  │ I should explain the core concepts...       │   │
-│  ╰─────────────────────────────────────────────╯   │
-│                                                    │
-│  Quantum computing is a type of computation        │
-│  that harnesses quantum mechanical phenomena...    │
-│                                                    │
-╰────────────────────────────────────────────────────╯
-
-You: Explain it simpler       ← AI remembers context!
-```
-
 ### Single Prompt Mode
 
 ```bash
-python main.py "Explain recursion in 3 sentences"
+python main.py "Explain quantum entanglement like I'm five"
 ```
-
-### Commands
-
-| Command | Action |
-|---------|--------|
-| `/exit` or `/quit` or `/q` | Exit the application |
-| `/reset` | Start a fresh conversation |
-| `Ctrl+C` | Force quit |
 
 ---
 
@@ -134,21 +107,16 @@ python main.py "Explain recursion in 3 sentences"
 
 ```
 GLMChat/
-├── main.py              # Entry point — interactive & single-prompt modes
-├── requirements.txt     # Python dependencies
-├── data/
-│   ├── .env             # Your credentials (not tracked by git)
-│   ├── auth_token.txt   # Cached JWT token
-│   ├── zai_cookies.json # Cached session cookies
-│   └── last_login.txt   # Session timestamp
+├── main.py              # Entry point — CLI logic
 ├── src/
-│   ├── __init__.py
+│   ├── secrets.py       # [NEW] OS Keyring & credential migration logic
 │   ├── auth.py          # Automated Google OAuth via nodriver
-│   ├── client.py        # Z.ai API client with HMAC signature
-│   ├── config.py        # Configuration & constants
+│   ├── client.py        # Z.ai API client (HTTP/2 + HMAC)
+│   ├── config.py        # Secure configuration & constants
 │   └── display.py       # Rich terminal UI renderer
-└── assets/
-    └── banner.png       # Project banner
+├── data/
+│   └── .env             # Non-sensitive config only (Secrets moved to Keyring)
+└── assets/              # Banners and media
 ```
 
 ---
@@ -159,23 +127,19 @@ GLMChat/
 sequenceDiagram
     participant User
     participant CLI as GLMChat CLI
-    participant Auth as Auth Module
+    participant OS as OS Keyring
     participant API as Z.ai API
 
-    User->>CLI: python main.py
-    CLI->>Auth: Check session validity
-    alt Session expired
-        Auth->>Auth: Launch browser (nodriver)
-        Auth->>Auth: Google OAuth login
-        Auth->>Auth: Extract JWT + cookies
-        Auth-->>CLI: Credentials saved
+    CLI->>OS: Retrieve secure credentials
+    alt No credentials found
+        CLI->>User: Request .env migration
     end
     User->>CLI: Type message
-    CLI->>CLI: Generate HMAC X-Signature
-    CLI->>API: POST /api/v2/chat/completions (SSE)
+    CLI->>CLI: Generate HMAC X-Signature (Optimized)
+    CLI->>API: POST /api/v2/chat/completions (HTTP/2 SSE)
     loop Stream tokens
-        API-->>CLI: data: {delta_content, phase}
-        CLI->>User: Render thinking + answer live
+        API-->>CLI: Multiplexed data stream
+        CLI->>User: Render live UI
     end
 ```
 
@@ -183,19 +147,15 @@ sequenceDiagram
 
 ## 🔧 Technical Highlights
 
-### Performance Optimizations
+### 🛡️ Security Architecture
+- **Keyring Integration**: Credentials are never stored in plaintext after the first run. We use the OS-native secret store (AES-256 encrypted by Windows/macOS/Linux).
+- **Auto-Migration**: Seamless DX that moves users from insecure `.env` files to professional secret management automatically.
 
-- **Event-Driven Rendering**: `rich.Live` with `auto_refresh=False` — UI updates only when data arrives
-- **Smart Render Throttling**: Markdown AST rebuild bounded to ~8 FPS to prevent O(n²) degradation on long responses
-- **Cached Headers**: Static HTTP headers allocated once and reused across requests
-- **Pre-encoded HMAC Key**: Salt key encoded to bytes at import time, not per-signature
-- **Connection Management**: `GLMClient` implements context manager protocol for guaranteed socket cleanup
-
-### Security
-
-- **Local-only credentials**: Email/password never leave your machine
-- **HMAC-SHA256 signatures**: Requests are signed using Z.ai's reverse-engineered signature algorithm
-- **Auto-expiring sessions**: Re-authentication triggered after 1 hour of inactivity
+### ⚡ Performance Optimizations
+- **HTTP/2 multiplexing**: Enabled `http2=True` for faster header compression and concurrent stream handling.
+- **HMAC Optimization**: Signature generation now uses fixed key ordering, eliminating `sorted()` calls per request.
+- **Pre-encoded Salt**: The Z.ai salt key is encoded to bytes once at import time, saving CPU cycles on every message.
+- **Event-Driven Rendering**: `rich.Live` updates only when new tokens arrive, minimizing terminal flicker and CPU usage.
 
 ---
 
@@ -203,10 +163,11 @@ sequenceDiagram
 
 | Package | Purpose |
 |---------|---------|
-| [`rich`](https://github.com/Textualize/rich) | Terminal UI, markdown, panels |
-| [`httpx`](https://github.com/encode/httpx) | HTTP client with streaming support |
+| [`keyring`](https://github.com/jaraco/keyring) | Secure OS-level credential management |
+| [`rich`](https://github.com/Textualize/rich) | Premium Terminal UI & Markdown |
+| [`httpx[http2]`](https://github.com/encode/httpx) | HTTP/2 Client with SSE support |
 | [`nodriver`](https://github.com/ultrafunkamsterdam/nodriver) | Undetected browser automation |
-| [`python-dotenv`](https://github.com/theskumar/python-dotenv) | Environment variable management |
+
 
 ---
 
